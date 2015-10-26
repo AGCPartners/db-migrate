@@ -21,5 +21,12 @@
   "bugs": {
     "url": "https://github.com/AGCPartners/db-migrate/issues"
   },
-  "homepage": "https://github.com/AGCPartners/db-migrate"
+  "homepage": "https://github.com/AGCPartners/db-migrate",
+  "dependencies": {
+    "async": "^1.5.0",
+    "colors": "^1.1.2",
+    "mysql": "^2.9.0",
+    "prompt": "^0.2.14",
+    "util": "^0.10.3"
+  }
 }
