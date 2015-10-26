@@ -16,13 +16,17 @@ var alterQueryTemplate = "ALTER TABLE %s %s COLUMN %s%s";
 module.exports = function(grunt) {
   grunt.registerTask('migrate', 'Migration tool', function() {
     var done = this.async();
+    // get the env from the params or use the NODE_ENV
     var env = grunt.option('env') || process.env.NODE_ENV;
     var envConfig = require('../../config/env/' + env + '.js');
     var envConnection =
       (envConfig.hasOwnProperty('models') && envConfig.models.hasOwnProperty('connection')) ?
         envConfig.models.connection : modelsConfig.models.connection;
 
+    // read the Sails mysql config for the env 
     var mysqlParams = connectionsConfig.connections[envConnection];
+
+    // convert sails mysql params to mysql params appropriate for node-myqsl
     var mysqlConfig = {
       port: mysqlParams.options.port,
       host: mysqlParams.options.host,
@@ -31,8 +35,13 @@ module.exports = function(grunt) {
     };
     var queryQueue = [];
 
+    // origDB is the database to which you'd like to apply the changes
     var origDB = mysqlParams.database;
+
+    // migrationDB is the temporary database that holds the desired structure
     var migrationDB = 'sailsMigration' + Math.floor(Math.random() * 999999);
+
+    // alter the sails mysql params to use the temporary db
     mysqlParams.database = migrationDB;
     mysqlParams.module = 'sails-mysql';
     var sailsConfig = {
@@ -44,7 +53,7 @@ module.exports = function(grunt) {
         migration: mysqlParams
       }
     };
-    // console.log(sailsConfig);
+    // Some prompts and messages before it starts
     prompt.message = "SailsJS + Sequelize migration tool by AGC Partners Ltd. <developers@agcparners.co.uk>".cyan;
     prompt.delimiter = '\n';
     prompt.start();
@@ -58,32 +67,44 @@ module.exports = function(grunt) {
         }
       }
     }, function (err, result) {
-      //console.log(result.name.cyan);
       if(result.continue.toLowerCase() === 'no') done();
 
       var connection = mysql.createConnection(mysqlConfig);
 
       connection.connect(function(err) {
         if (err) done(err);
+
+        // query to drop the migration database if it exists (should never happen)
         var dropQuery = util.format(dropTempDbQueryTemplate, migrationDB);
+
+        // query to create temp db
         var dbQuery = util.format(createTempDbQueryTemplate, migrationDB);
         connection.query(dropQuery, function(err) {
           if (err) done(err);
           connection.query(dbQuery, function(err) {
             if(err) done(err);
 
+            // when we have temp db, lift sails to create the tables with desired structure
             var sails = new Sails();
             sails.lift(sailsConfig, function (err, server) {
-              // console.log(server.config);
               if (err) done(err);
 
-              //console.log('Sails lifted');
+              // query to get all the desired tables
               connection.query(util.format('SHOW TABLES IN `%s`', migrationDB), function(err, tables) {
                 if(err) done(err);
 
+                // map the query result into an array
                 var tbl = tables.map(function(t) { return t['Tables_in_' + migrationDB]; });
-                //console.log(tbl);
 
+                /* this is the tricky part
+                ** we loop through all the desired tables
+                ** to produce functions that will
+                ** compare them with the same tables in the original DB
+                ** and if there is any difference we generate a query
+                ** to apply the diff to the original db
+                ** the generated function contains the prompt to ask user
+                ** whether to run the particular query or not
+                */ 
                 var compareQueries = tbl.map(function(t) {
                   return function(callback) {
                     connection.query(util.format(compareQueryTemplate, migrationDB, migrationDB, origDB, t), function(err, results) {
@@ -120,16 +141,19 @@ module.exports = function(grunt) {
                     });
                   };
                 });
-
+                // here we generate the compareQueries in parallel
                 async.parallel(compareQueries, function(err, results) {
                   if (err) done(err);
 
+                  // here we switch to the original db
                   connection.query(util.format(switchDBQueryTemplate, origDB), function() {
                     if (err) done(err);
 
+                    // here we execute migration queries one by one
                     async.series(queryQueue, function(err, result) {
                       if (err) done(err);
 
+                      // when all the queries are done, drop the temp db
                       connection.query(dropQuery, function(err) {
                         if (err) done(err);
 
