@@ -50,10 +50,19 @@ MysqlTransit.prototype._init = function(next) {
 /**
  * start the transit
  *
+ * @param opt object with the configuration for the export
+ * {
+ *  interactive: false|true  // default true, if false execute the migrations without asking confirmation to the user
+ * }
  * @param next
  */
-MysqlTransit.prototype.transit = function(next) {
+MysqlTransit.prototype.transit = function(opt, next) {
   var self = this;
+  var interactive = true;
+
+  if (opt.hasOwnProperty('interactive') && opt.interactive === false) {
+    interactive = false;
+  }
 
   async.waterfall([
       function getAllTablesInTempDatabase(callback) {
@@ -88,28 +97,36 @@ MysqlTransit.prototype.transit = function(next) {
                       alterQueryTemplate, table, res.action, res.column_name,
                       res.action === 'ADD' ? " " + res.column_type : ""
                     );
-                    prompt.start();
-                    prompt.message = "";
-                    prompt.get({
-                      properties: {
-                        exec: {
-                          description: 'Query: ' + q.green + ' Execute? (yes/no)',
-                          default: 'yes',
-                          pattern: /^(yes|no)/i
-                        }
-                      }
-                    }, function(err, answer) {
-                      if (err) cb(err);
-                      if (answer.exec.toLowerCase() === 'no') cb();
-                      if (answer.exec.toLowerCase() === 'yes') {
-                        self.connection.query(q, function(err, res) {
-                          if (err) cb(err);
 
-                          console.log('Query executed successfully');
-                          cb();
-                        });
-                      }
-                    });
+                    if (interactive) {
+                      prompt.start();
+                      prompt.message = "";
+                      prompt.get({
+                        properties: {
+                          exec: {
+                            description: 'Query: ' + q.green + ' Execute? (yes/no)',
+                            default: 'yes',
+                            pattern: /^(yes|no)/i
+                          }
+                        }
+                      }, function(err, answer) {
+                        if (err) return cb(err);
+                        if (answer.exec.toLowerCase() === 'no') return cb();
+                        if (answer.exec.toLowerCase() === 'yes') {
+                          executeQuery(self.connection, q, function(err){
+                            if (err) return cb(err);
+
+                            return cb();
+                          })
+                        }
+                      });
+                    } else {
+                      executeQuery(self.connection, q, function(err){
+                        if (err) return cb(err);
+
+                        return cb();
+                      })
+                    }
                   });
                 });
                 callback();
@@ -146,3 +163,12 @@ MysqlTransit.prototype.transit = function(next) {
 }
 
 module.exports = MysqlTransit;
+
+function executeQuery(connection, q, cb) {
+  connection.query(q, function(err, res) {
+    if (err) return cb(err);
+
+    console.log('Query executed successfully');
+    return cb();
+  });
+}
