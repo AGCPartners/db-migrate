@@ -66,6 +66,123 @@ MysqlTransit.prototype.transit = function(opt, next) {
   }
 
   async.waterfall([
+      function switchDB(callback) {
+        self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function(err) {
+          if (err) callback(err);
+
+          callback();
+        });
+      },
+      function compareTables(callback) {
+        self.connection.query(util.format(queries.COMPARE_TABLES, self.dbTemp, self.dbTemp, self.dbOriginal),
+          function(err, results) {
+            if (err) callback(err);
+
+            var tablesToDrop = [];
+            var tablesToCreate = [];
+
+            results.forEach(function(t) {
+              if(t.action === 'DROP') {
+                tablesToDrop.push(t.table_name);
+              } else {
+                tablesToCreate.push(t.table_name);
+              }
+            });
+            var verifyTables = tablesToDrop.map(function(t) {
+              return function(cb) {
+                var possibleAnswers = tablesToCreate.map(function(tbl, i) {
+                  return {
+                    name: 'Renamed to '+tbl,
+                    value: i+2
+                  };
+                });
+
+                possibleAnswers.unshift(
+                  {
+                    name: 'Removed',
+                    value: 0
+                  },
+                  {
+                    name: 'Skipped',
+                    value: 1
+                  }
+                );
+
+                inq.prompt([
+                  {
+                    name: 'verify',
+                    message: 'Table ' + t + ' should be',
+                    type: 'list',
+                    choices: possibleAnswers
+                  }
+                ], function(answer) {
+                  answer = parseInt(answer.verify);
+                  switch(answer) {
+                    case 0: {
+                      self.connection.query(util.format(queries.DROP_TABLE, t), function(err) {
+                        if (err) return cb(err);
+
+                        console.log('Table ' + t + ' removed successfully.');
+                        cb();
+                      });
+                      break;
+                    }
+                    case 1: {
+                      cb();
+                      break;
+                    }
+                    default: {
+                      var index = parseInt(answer)-2;
+                      self.connection.query(util.format(queries.RENAME_TABLE, t, tablesToCreate[index]), function(err) {
+                        if (err) return cb(err);
+
+                        tablesToCreate.splice(index, 1);
+                        cb();
+                      });
+                      break;
+                    }
+                  }
+                });
+              };
+            });
+
+            async.series(verifyTables, function(err, results) {
+              if (err) callback(err);
+
+              var createTables = tablesToCreate.map(function(tbl) {
+                return function(cb) {
+                  inq.prompt([
+                    {
+                      name: 'create',
+                      message: 'Create table ' + tbl + '?',
+                      type: 'confirm',
+                      default: true
+                    }
+                  ], function(answer) {
+                    if(answer.create) {
+                      self.connection.query(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
+                        if (err) return cb(err);
+
+                        console.log('Table ' + tbl + ' created successfully.');
+                        cb();
+                      });
+                    } else {
+                      console.log('Skipped');
+                      cb();
+                    }
+                  });
+                }
+              });
+
+              async.series(createTables, function(err, results) {
+                if (err) callback(err);
+
+                callback();
+              });
+            });
+          }
+        );
+      },
       function getAllTablesInTempDatabase(callback) {
         self.connection.query(util.format(queries.SHOW_TABLES, self.dbTemp), function(err, tables) {
           if (err) return callback(err);
@@ -109,7 +226,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                       };
                     });
                     possibleAnswers.unshift({
-                      name: 'Deleted',
+                      name: 'Removed',
                       value: 0
                     },
                     {
@@ -128,7 +245,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                       answer = parseInt(answer.verify);
                       switch(answer) {
                         case 0: { 
-                          singleTableQueries.push(util.format(queries.ALTER_TABLE, table, 'DROP', rmField.name, ""));
+                          singleTableQueries.push(util.format(queries.DROP_COLUMN, table, rmField.name));
                           cb();
                           break;
                         }
@@ -201,6 +318,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
             async.series(self.queryQueue, function(err, result) {
               if (err) callback(err);
 
+              console.log('Done.');
               return callback();
             });
           });
