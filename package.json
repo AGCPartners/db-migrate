@@ -1,5 +1,5 @@
 {
-  "name": "db-migrate",
+  "name": "mysql-transit",
   "version": "0.0.1",
   "description": "Core package for mysql migration tool",
   "main": "index.js",
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/AGCPartners/db-migrate.git"
+    "url": "https://github.com/AGCPartners/mysql-transit.git"
   },
   "keywords": [
     "mysql",
@@ -19,7 +19,16 @@
   "author": "AGC Partners Ltd",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/AGCPartners/db-migrate/issues"
+    "url": "https://github.com/AGCPartners/mysql-transit/issues"
   },
-  "homepage": "https://github.com/AGCPartners/db-migrate"
+  "homepage": "https://github.com/AGCPartners/mysql-transit",
+  "dependencies": {
+    "async": "^1.5.0",
+    "inquirer": "^0.11.0",
+    "mkdirp": "^0.5.1",
+    "mocha": "^2.3.3",
+    "mysql": "^2.9.0",
+    "path": "^0.12.7",
+    "util": "^0.10.3"
+  }
 }
