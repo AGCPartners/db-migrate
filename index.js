@@ -1,7 +1,8 @@
 var async = require('async');
 var mysql = require('mysql');
 var util = require('util');
-var prompt = require('prompt');
+var inq = require('inquirer');
+var queries = require('./lib/queries.js');
 
 /**
  * Initialize the MysqlTransit object
@@ -57,7 +58,7 @@ MysqlTransit.prototype.transit = function(next) {
 
   async.waterfall([
       function getAllTablesInTempDatabase(callback) {
-        self.connection.query(util.format('SHOW TABLES IN `%s`', self.dbTemp), function(err, tables) {
+        self.connection.query(util.format(queries.SHOW_TABLES, self.dbTemp), function(err, tables) {
           if (err) return callback(err);
 
           self.arrTable = tables.map(function(t) {
@@ -67,64 +68,124 @@ MysqlTransit.prototype.transit = function(next) {
         });
       },
       function generateSQLMigration(callback) {
-        var compareQueryTemplate = "" +
-          "SELECT action,column_name,ordinal_position,data_type,column_type " +
-          "FROM (SELECT column_name,ordinal_position,data_type,column_type,COUNT(1) " +
-          "as rowcount, IF(table_schema='%s', 'ADD', 'DROP') as action FROM information_schema.columns " +
-          "WHERE (table_schema='%s' OR table_schema='%s') AND table_name ='%s' " +
-          "GROUP BY column_name,data_type,column_type,table_name " +
-          "HAVING COUNT(1)=1) A;";
-        var alterQueryTemplate = "ALTER TABLE %s %s COLUMN %s%s";
-
         self.compareQueries = self.arrTable.map(function(table) {
           return function(callback) {
-            self.connection.query(util.format(compareQueryTemplate, self.dbTemp, self.dbTemp, self.dbOriginal, table),
+            self.connection.query(util.format(queries.COMPARE_COLUMNS, self.dbTemp, self.dbTemp, self.dbOriginal, table),
               function(err, results) {
                 if (err) callback(err);
 
+                var singleTableQueries = [];
+                var removedFields = [];
+                var addedFields = [];
+                var modifiedFields = [];
+
                 results.forEach(function(res) {
-                  self.queryQueue.push(function(cb) {
-                    var q = util.format(
-                      alterQueryTemplate, table, res.action, res.column_name,
-                      res.action === 'ADD' ? " " + res.column_type : ""
-                    );
-                    prompt.start();
-                    prompt.message = "";
-                    prompt.get({
-                      properties: {
-                        exec: {
-                          description: 'Query: ' + q.green + ' Execute? (yes/no)',
-                          default: 'yes',
-                          pattern: /^(yes|no)/i
+                  if(res.action === 'ADD') {
+                    addedFields.push({ name: res.column_name, type: res.column_type });
+                  } else if(res.action === 'DROP') {
+                    removedFields.push({ name: res.column_name, type: res.column_type });
+                  } else if(res.action === 'MODIFY') {
+                    modifiedFields.push({ name: res.column_name, type: res.column_type });
+                  }
+                });
+
+                // console.log(self.addedFields);
+
+                var verify = removedFields.map(function(rmField) {
+                  return function(cb) {
+                    var possibleAnswers = addedFields.map(function(f, i) { 
+                      return { 
+                        name: 'Changed to ' + f.name + ' ' + f.type,
+                        value: i+2
+                      };
+                    });
+                    possibleAnswers.unshift({
+                      name: 'Deleted',
+                      value: 0
+                    },
+                    {
+                      name: 'Skipped',
+                      value: 1
+                    });
+
+                    inq.prompt([
+                      {
+                        name: 'verify',
+                        type: 'list',
+                        message: 'In '+table+' table the field `' +rmField.name+'` should be:',
+                        choices: possibleAnswers
+                      }
+                    ], function(answer) {
+                      answer = parseInt(answer.verify);
+                      switch(answer) {
+                        case 0: { 
+                          singleTableQueries.push(util.format(queries.ALTER_TABLE, table, 'DROP', rmField.name, ""));
+                          cb();
+                          break;
+                        }
+                        case 1: {
+                          cb();
+                          break;
+                        }
+                        default: {
+                          var index = parseInt(answer)-2;
+                          var newField = addedFields[index].name + ' ' + addedFields[index].type;
+                          singleTableQueries.push(util.format(queries.CHANGE_COLUMN, table, rmField.name, newField));
+                          addedFields.splice(index, 1);
+                          cb();
+                          break;
                         }
                       }
-                    }, function(err, answer) {
-                      if (err) cb(err);
-                      if (answer.exec.toLowerCase() === 'no') cb();
-                      if (answer.exec.toLowerCase() === 'yes') {
-                        self.connection.query(q, function(err, res) {
-                          if (err) cb(err);
+                    });
+                  }
+                });
 
-                          console.log('Query executed successfully');
+                async.series(verify, function(err, result) {
+                  if (err) callback(err);
+
+                  addedFields.forEach(function(newField) {
+                    singleTableQueries.push(util.format(queries.ADD_COLUMN, table, newField.name, newField.type));
+                  });
+
+                  modifiedFields.forEach(function(modifiedField) {
+                    singleTableQueries.push(util.format(queries.MODIFY_COLUMN, table, modifiedField.name, modifiedField.type))
+                  });
+
+                  singleTableQueries.forEach(function(query) {
+                    self.queryQueue.push(function(cb) {
+                      inq.prompt([{
+                        name: 'exec',
+                        message: 'Query: ' + query + ' Execute?',
+                        type: 'confirm',
+                        default: true
+                      }], function(answer) {
+                        if(answer.exec) {
+                          self.connection.query(query, function(err, res) {
+                            if (err) cb(err);
+
+                            console.log('Query executed successfully');
+                            cb();
+                          });
+                        } else {
+                          console.log('Skipped');
                           cb();
-                        });
-                      }
+                        }
+                      });
                     });
                   });
+                  callback();
                 });
-                callback();
               });
           };
         });
         return callback();
       },
       function run(callback) {
-        var switchDBQueryTemplate = "USE `%s`;";
-        async.parallel(self.compareQueries, function(err, results) {
+        async.series(self.compareQueries, function(err, results) {
           if (err) callback(err);
 
           // here we switch to the original db
-          self.connection.query(util.format(switchDBQueryTemplate, self.dbOriginal), function() {
+          self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function() {
             if (err) callback(err);
 
             // here we execute migration queries one by one
