@@ -17,12 +17,12 @@ var queries = require('./lib/queries.js');
  *    password: mysqlParams.password
  * }
  */
-function MysqlTransit(dbOriginal, dbTemp, connectionParameters, next) {
+function MysqlTransit(dbOriginal, dbTemp, connectionParameters) {
   this.dbOriginal = dbOriginal;
   this.dbTemp = dbTemp;
   this.connectionParameters = connectionParameters;
   this.queryQueue = [];
-  return this._init(next);
+  return this._init();
 }
 
 MysqlTransit.prototype._init = function(next) {
@@ -41,9 +41,9 @@ MysqlTransit.prototype._init = function(next) {
       }
     ],
     function(err, result) {
-      if (err) return next(err);
+      if (err) throw err;
 
-      return next(null, result);
+      return self;
     }
   );
 }
