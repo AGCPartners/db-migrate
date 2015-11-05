@@ -51,10 +51,19 @@ MysqlTransit.prototype._init = function(next) {
 /**
  * start the transit
  *
+ * @param opt object with the configuration for the export
+ * {
+ *  interactive: false|true  // default true, if false execute the migrations without asking confirmation to the user
+ * }
  * @param next
  */
-MysqlTransit.prototype.transit = function(next) {
+MysqlTransit.prototype.transit = function(opt, next) {
   var self = this;
+  var interactive = true;
+
+  if (opt.hasOwnProperty('interactive') && opt.interactive === false) {
+    interactive = false;
+  }
 
   async.waterfall([
       function getAllTablesInTempDatabase(callback) {
@@ -207,3 +216,12 @@ MysqlTransit.prototype.transit = function(next) {
 }
 
 module.exports = MysqlTransit;
+
+function executeQuery(connection, q, cb) {
+  connection.query(q, function(err, res) {
+    if (err) return cb(err);
+
+    console.log('Query executed successfully');
+    return cb();
+  });
+}
