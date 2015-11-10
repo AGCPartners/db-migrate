@@ -241,7 +241,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
       function generateSQLMigration(callback) {
         self.compareQueries = self.arrTable.map(function(table) {
           return function(callback) {
-            self.connection.query(util.format(queries.COMPARE_COLUMNS, self.dbTemp, self.dbTemp, self.dbOriginal, table),
+            self.connection.query(util.format(queries.COMPARE_COLUMNS, self.dbTemp, self.dbTemp, self.dbOriginal, table, self.dbTemp, self.dbOriginal),
               function(err, results) {
                 if (err) callback(err);
 
