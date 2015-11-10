@@ -1,7 +1,9 @@
 var async = require('async');
 var mysql = require('mysql');
 var util = require('util');
+var fs = require('fs');
 var inq = require('inquirer');
+var path = require('path');
 var queries = require('./lib/queries.js');
 
 /**
@@ -22,6 +24,8 @@ function MysqlTransit(dbOriginal, dbTemp, connectionParameters) {
   this.dbTemp = dbTemp;
   this.connectionParameters = connectionParameters;
   this.queryQueue = [];
+  this.tablesToDrop = [];
+  this.tablesToCreate = [];
   return this._init();
 }
 
@@ -48,21 +52,147 @@ MysqlTransit.prototype._init = function(next) {
   );
 }
 
+MysqlTransit.prototype.executeQuery = function(q, cb) {
+  this.connection.query(q, function(err, res) {
+    if (err) return cb(err);
+
+    console.log('--------------------------------------------------------------------------------');
+    console.log(q);
+    console.log('Query executed successfully');
+    console.log('--------------------------------------------------------------------------------');
+    return cb();
+  });
+}
+
+MysqlTransit.prototype.verifyTables = function() {
+  var self = this;
+  var verifyTables = self.tablesToDrop.map(function(t) {
+    return function(cb) {
+      var possibleAnswers = self.tablesToCreate.map(function(tbl, i) {
+        return {
+          name: 'Renamed to ' + tbl,
+          value: i + 2
+        };
+      });
+
+      if (this.interactive === true) {
+        possibleAnswers.unshift(
+          {
+            name: 'Removed',
+            value: 0
+          },
+          {
+            name: 'Skipped',
+            value: 1
+          }
+        );
+
+        inq.prompt([
+          {
+            name: 'verify',
+            message: 'Table ' + t + ' should be',
+            type: 'list',
+            choices: possibleAnswers
+          }
+        ], function(answer) {
+          answer = parseInt(answer.verify);
+          switch (answer) {
+            case 0:
+            {
+              self.executeQuery(util.format(queries.DROP_TABLE, t), function(err) {
+                if (err) return cb(err);
+
+                console.log('Table ' + t + ' removed successfully.');
+                cb();
+              });
+
+              break;
+            }
+            case 1:
+            {
+              cb();
+              break;
+            }
+            default:
+            {
+              var index = parseInt(answer) - 2;
+              self.executeQuery(util.format(queries.RENAME_TABLE, t, self.tablesToCreate[index]), function(err) {
+                if (err) return cb(err);
+
+                self.tablesToCreate.splice(index, 1);
+                cb();
+              });
+              break;
+            }
+          }
+        });
+      } else {
+        cb();
+      }
+    };
+  });
+  return verifyTables;
+}
+
+MysqlTransit.prototype.createTables = function() {
+  var self = this;
+  var createTables = this.tablesToCreate.map(function(tbl) {
+    return function(cb) {
+      if (this.interactive === true) {
+        inq.prompt([
+          {
+            name: 'create',
+            message: 'Create table ' + tbl + '?',
+            type: 'confirm',
+            default: true
+          }
+        ], function(answer) {
+          if (answer.create) {
+            self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
+              if (err) return cb(err);
+
+              console.log('Table ' + tbl + ' created successfully.');
+              cb();
+            });
+          } else {
+            console.log('Skipped');
+            cb();
+          }
+        });
+      } else {
+        self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
+          if (err) return cb(err);
+
+          console.log('Table ' + tbl + ' created successfully.');
+          cb();
+        });
+      }
+    }
+  });
+  return createTables;
+}
+
 /**
  * start the transit
  *
  * @param opt object with the configuration for the export
  * {
- *  interactive: false|true  // default true, if false execute the migrations without asking confirmation to the user
+ *  interactive: false|true  // default true, if false execute the migrations without asking confirmation to the user,
+ *  safe: false|true  // default false, if true it doesn't run the queries but write them in a file
  * }
  * @param next
  */
 MysqlTransit.prototype.transit = function(opt, next) {
   var self = this;
-  var interactive = true;
+  this.interactive = true;
+  this.interactive = false;
 
   if (opt.hasOwnProperty('interactive') && opt.interactive === false) {
-    interactive = false;
+    this.interactive = false;
+  }
+
+  if (opt.hasOwnProperty('safe') && opt.safe === true) {
+    this.safe = true;
   }
 
   async.waterfall([
@@ -78,103 +208,18 @@ MysqlTransit.prototype.transit = function(opt, next) {
           function(err, results) {
             if (err) callback(err);
 
-            var tablesToDrop = [];
-            var tablesToCreate = [];
-
             results.forEach(function(t) {
-              if(t.action === 'DROP') {
-                tablesToDrop.push(t.table_name);
+              if (t.action === 'DROP') {
+                self.tablesToDrop.push(t.table_name);
               } else {
-                tablesToCreate.push(t.table_name);
+                self.tablesToCreate.push(t.table_name);
               }
             });
-            var verifyTables = tablesToDrop.map(function(t) {
-              return function(cb) {
-                var possibleAnswers = tablesToCreate.map(function(tbl, i) {
-                  return {
-                    name: 'Renamed to '+tbl,
-                    value: i+2
-                  };
-                });
 
-                possibleAnswers.unshift(
-                  {
-                    name: 'Removed',
-                    value: 0
-                  },
-                  {
-                    name: 'Skipped',
-                    value: 1
-                  }
-                );
-
-                inq.prompt([
-                  {
-                    name: 'verify',
-                    message: 'Table ' + t + ' should be',
-                    type: 'list',
-                    choices: possibleAnswers
-                  }
-                ], function(answer) {
-                  answer = parseInt(answer.verify);
-                  switch(answer) {
-                    case 0: {
-                      self.connection.query(util.format(queries.DROP_TABLE, t), function(err) {
-                        if (err) return cb(err);
-
-                        console.log('Table ' + t + ' removed successfully.');
-                        cb();
-                      });
-                      break;
-                    }
-                    case 1: {
-                      cb();
-                      break;
-                    }
-                    default: {
-                      var index = parseInt(answer)-2;
-                      self.connection.query(util.format(queries.RENAME_TABLE, t, tablesToCreate[index]), function(err) {
-                        if (err) return cb(err);
-
-                        tablesToCreate.splice(index, 1);
-                        cb();
-                      });
-                      break;
-                    }
-                  }
-                });
-              };
-            });
-
-            async.series(verifyTables, function(err, results) {
+            async.series(self.verifyTables(), function(err, results) {
               if (err) callback(err);
 
-              var createTables = tablesToCreate.map(function(tbl) {
-                return function(cb) {
-                  inq.prompt([
-                    {
-                      name: 'create',
-                      message: 'Create table ' + tbl + '?',
-                      type: 'confirm',
-                      default: true
-                    }
-                  ], function(answer) {
-                    if(answer.create) {
-                      self.connection.query(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
-                        if (err) return cb(err);
-
-                        console.log('Table ' + tbl + ' created successfully.');
-                        cb();
-                      });
-                    } else {
-                      console.log('Skipped');
-                      cb();
-                    }
-                  });
-                }
-              });
-
-              async.series(createTables, function(err, results) {
+              async.series(self.createTables(), function(err, results) {
                 if (err) callback(err);
 
                 callback();
@@ -206,11 +251,11 @@ MysqlTransit.prototype.transit = function(opt, next) {
                 var modifiedFields = [];
 
                 results.forEach(function(res) {
-                  if(res.action === 'ADD') {
+                  if (res.action === 'ADD') {
                     addedFields.push({ name: res.column_name, type: res.column_type });
-                  } else if(res.action === 'DROP') {
+                  } else if (res.action === 'DROP') {
                     removedFields.push({ name: res.column_name, type: res.column_type });
-                  } else if(res.action === 'MODIFY') {
+                  } else if (res.action === 'MODIFY') {
                     modifiedFields.push({ name: res.column_name, type: res.column_type });
                   }
                 });
@@ -219,50 +264,57 @@ MysqlTransit.prototype.transit = function(opt, next) {
 
                 var verify = removedFields.map(function(rmField) {
                   return function(cb) {
-                    var possibleAnswers = addedFields.map(function(f, i) { 
-                      return { 
-                        name: 'Changed to ' + f.name + ' ' + f.type,
-                        value: i+2
-                      };
-                    });
-                    possibleAnswers.unshift({
-                      name: 'Removed',
-                      value: 0
-                    },
-                    {
-                      name: 'Skipped',
-                      value: 1
-                    });
+                    if (this.interactive === true) {
+                      var possibleAnswers = addedFields.map(function(f, i) {
+                        return {
+                          name: 'Changed to ' + f.name + ' ' + f.type,
+                          value: i + 2
+                        };
+                      });
+                      possibleAnswers.unshift({
+                          name: 'Removed',
+                          value: 0
+                        },
+                        {
+                          name: 'Skipped',
+                          value: 1
+                        });
 
-                    inq.prompt([
-                      {
-                        name: 'verify',
-                        type: 'list',
-                        message: 'In '+table+' table the field `' +rmField.name+'` should be:',
-                        choices: possibleAnswers
-                      }
-                    ], function(answer) {
-                      answer = parseInt(answer.verify);
-                      switch(answer) {
-                        case 0: { 
-                          singleTableQueries.push(util.format(queries.DROP_COLUMN, table, rmField.name));
-                          cb();
-                          break;
+                      inq.prompt([
+                        {
+                          name: 'verify',
+                          type: 'list',
+                          message: 'In ' + table + ' table the field `' + rmField.name + '` should be:',
+                          choices: possibleAnswers
                         }
-                        case 1: {
-                          cb();
-                          break;
+                      ], function(answer) {
+                        answer = parseInt(answer.verify);
+                        switch (answer) {
+                          case 0:
+                          {
+                            singleTableQueries.push(util.format(queries.DROP_COLUMN, table, rmField.name));
+                            cb();
+                            break;
+                          }
+                          case 1:
+                          {
+                            cb();
+                            break;
+                          }
+                          default:
+                          {
+                            var index = parseInt(answer) - 2;
+                            var newField = addedFields[index].name + ' ' + addedFields[index].type;
+                            singleTableQueries.push(util.format(queries.CHANGE_COLUMN, table, rmField.name, newField));
+                            addedFields.splice(index, 1);
+                            cb();
+                            break;
+                          }
                         }
-                        default: {
-                          var index = parseInt(answer)-2;
-                          var newField = addedFields[index].name + ' ' + addedFields[index].type;
-                          singleTableQueries.push(util.format(queries.CHANGE_COLUMN, table, rmField.name, newField));
-                          addedFields.splice(index, 1);
-                          cb();
-                          break;
-                        }
-                      }
-                    });
+                      });
+                    } else {
+                      cb();
+                    }
                   }
                 });
 
@@ -279,24 +331,31 @@ MysqlTransit.prototype.transit = function(opt, next) {
 
                   singleTableQueries.forEach(function(query) {
                     self.queryQueue.push(function(cb) {
-                      inq.prompt([{
-                        name: 'exec',
-                        message: 'Query: ' + query + ' Execute?',
-                        type: 'confirm',
-                        default: true
-                      }], function(answer) {
-                        if(answer.exec) {
-                          self.connection.query(query, function(err, res) {
-                            if (err) cb(err);
+                      if (this.interactive === true) {
+                        inq.prompt([{
+                          name: 'exec',
+                          message: 'Query: ' + query + ' Execute?',
+                          type: 'confirm',
+                          default: true
+                        }], function(answer) {
+                          if (answer.exec) {
+                            self.executeQuery(query, function(err) {
+                              if (err) cb(err);
 
-                            console.log('Query executed successfully');
+                              cb()
+                            });
+                          } else {
+                            console.log('Skipped');
                             cb();
-                          });
-                        } else {
-                          console.log('Skipped');
-                          cb();
-                        }
-                      });
+                          }
+                        });
+                      } else {
+                        self.executeQuery(query, function(err) {
+                          if (err) cb(err);
+
+                          cb()
+                        });
+                      }
                     });
                   });
                   callback();
@@ -333,13 +392,13 @@ MysqlTransit.prototype.transit = function(opt, next) {
     });
 }
 
-module.exports = MysqlTransit;
-
-function executeQuery(connection, q, cb) {
-  connection.query(q, function(err, res) {
+/**
+  var appDir = path.dirname(require.main.filename);
+  this.filepath = (this.filepath) ? this.filepath : appDir + '/migration_' + Date.now();
+  fs.writeFile(filepath, q + "\r\n", function(err) {
     if (err) return cb(err);
-
-    console.log('Query executed successfully');
+    console.log("The file was saved!");
     return cb();
   });
-}
+ */
+module.exports = MysqlTransit;
