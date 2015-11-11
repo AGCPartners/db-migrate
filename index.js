@@ -56,10 +56,12 @@ MysqlTransit.prototype.executeQuery = function(q, cb) {
   this.connection.query(q, function(err, res) {
     if (err) return cb(err);
 
-    console.log('--------------------------------------------------------------------------------');
-    console.log(q);
-    console.log('Query executed successfully');
-    console.log('--------------------------------------------------------------------------------');
+    if (this.interactive === true) {
+      console.log('--------------------------------------------------------------------------------');
+      console.log(q);
+      console.log('Query executed successfully');
+      console.log('--------------------------------------------------------------------------------');
+    }
     return cb();
   });
 }
@@ -102,7 +104,9 @@ MysqlTransit.prototype.verifyTables = function() {
               self.executeQuery(util.format(queries.DROP_TABLE, t), function(err) {
                 if (err) return cb(err);
 
-                console.log('Table ' + t + ' removed successfully.');
+                if (this.interactive === true) {
+                  console.log('Table ' + t + ' removed successfully.');
+                }
                 cb();
               });
 
@@ -151,11 +155,15 @@ MysqlTransit.prototype.createTables = function() {
             self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
               if (err) return cb(err);
 
-              console.log('Table ' + tbl + ' created successfully.');
+              if (this.interactive === true) {
+                console.log('Table ' + tbl + ' created successfully.');
+              }
               cb();
             });
           } else {
-            console.log('Skipped');
+            if (this.interactive === true) {
+              console.log('Skipped');
+            }
             cb();
           }
         });
@@ -163,7 +171,9 @@ MysqlTransit.prototype.createTables = function() {
         self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
           if (err) return cb(err);
 
-          console.log('Table ' + tbl + ' created successfully.');
+          if (this.interactive === true) {
+            console.log('Table ' + tbl + ' created successfully.');
+          }
           cb();
         });
       }
@@ -377,7 +387,9 @@ MysqlTransit.prototype.transit = function(opt, next) {
             async.series(self.queryQueue, function(err, result) {
               if (err) callback(err);
 
-              console.log('Done.');
+              if (this.interactive === true) {
+                console.log('Done.');
+              }
               return callback();
             });
           });
