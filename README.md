@@ -1,6 +1,8 @@
 # mysql-transit
 Core package for mysql migration tool
 
+[![Build Status](https://travis-ci.org/AGCPartners/mysql-transit.svg?branch=develop)](https://travis-ci.org/AGCPartners/mysql-transit)
+
 ##Installation##
 `npm install mysql-transit`
 
