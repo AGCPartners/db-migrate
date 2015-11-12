@@ -15,7 +15,7 @@ var mysqlTransit = new MysqlTransit('originalDB', 'newDb', {
   'password': 'root'
 });
 
-mysqlTransit.transit({ interactive: true, safe: false }, function(err, transitResult) {
+mysqlTransit.transit({ interactive: true }, function(err, transitResult) {
   if (err) console.log(err);
   // your code here
 });
