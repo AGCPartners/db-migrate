@@ -352,7 +352,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                             self.executeQuery(query, function(err) {
                               if (err) cb(err);
 
-                              cb()
+                              cb();
                             });
                           } else {
                             console.log('Skipped');
@@ -363,7 +363,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                         self.executeQuery(query, function(err) {
                           if (err) cb(err);
 
-                          cb()
+                          cb();
                         });
                       }
                     });
