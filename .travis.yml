@@ -8,6 +8,7 @@ language: node_js
 node_js:
    - "0.12.2"
 env:
-  - MYSQL_TEST_PASSWORD: ''
+  global:
+  - MYSQL_TEST_PASSWORD=
 script:
   - ./node_modules/.bin/mocha test/*
