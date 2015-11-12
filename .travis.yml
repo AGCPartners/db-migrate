@@ -1,0 +1,14 @@
+# back travis building until they fix / whitelist
+# https://github.com/travis-ci/apt-source-whitelist/issues/130
+# sudo: false
+services:
+  - mysql
+branches:
+  only:
+    - master
+    - develop
+language: node_js
+node_js:
+   - "0.12.2"
+script:
+  - env MYSQL_TEST_PASSWORD='' ./node_modules/.bin/mocha test/*
