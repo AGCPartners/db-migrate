@@ -23,9 +23,8 @@ mysqlTransit.transit({ interactive: true, safe: false }, function(err, transitRe
 ```
 When you instantiate `new MysqlTransit` the first argument is the name of the database in which you want to apply the edits, the second argument is the name of the database that you want to read to find the changes and the third argument is an object with the parameters required to connect to the databases.
 
-the first arguments of the method `mysqlTransit.transit` accept these options:
+the first arguments of the method `mysqlTransit.transit` is an object accepting these options:
 - `interactive: true|false // default true, if false it execute the queries in the originalDB without asking for user confirmation`.
-- `safe: true|false // default false, if true it doesn't run the queries in the originalDB but it writes them in a file`.
 
 ##Support##
 - MySQL
