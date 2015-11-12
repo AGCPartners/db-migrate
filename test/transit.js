@@ -4,10 +4,10 @@ var should = require('chai').should();
 var MysqlTransit = require('../index');
 
 var connectionParams = {
-  'host': (process.env.MYSQL_TEST_HOST) ? process.env.MYSQL_TEST_PORT : 'localhost',
+  'host': (process.env.MYSQL_TEST_HOST) ? process.env.MYSQL_TEST_HOST : 'localhost',
   'port': (process.env.MYSQL_TEST_PORT) ? process.env.MYSQL_TEST_PORT : 3306,
-  'user': (process.env.MYSQL_TEST_USER) ? process.env.MYSQL_TEST_PORT : 'root',
-  'password': (process.env.MYSQL_TEST_PASSWORD) ? process.env.MYSQL_TEST_PORT : 'root'
+  'user': (process.env.MYSQL_TEST_USER) ? process.env.MYSQL_TEST_USER : 'root',
+  'password': (process.env.MYSQL_TEST_PASSWORD !== undefined) ? process.env.MYSQL_TEST_PASSWORD : 'root'
 };
 var connection,
   createOriginalDatabase,
