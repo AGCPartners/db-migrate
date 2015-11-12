@@ -1,6 +1,3 @@
-# back travis building until they fix / whitelist
-# https://github.com/travis-ci/apt-source-whitelist/issues/130
-# sudo: false
 services:
   - mysql
 branches:
