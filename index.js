@@ -37,7 +37,7 @@ MysqlTransit.prototype._init = function(next) {
 
         self.connection.connect(function(err) {
           if (err) {
-            callback(err);
+            return callback(err);
           }
 
           return callback(null, self.connection);
@@ -208,7 +208,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
   async.waterfall([
       function switchDB(callback) {
         self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function(err) {
-          if (err) callback(err);
+          if (err) return callback(err);
 
           callback();
         });
@@ -216,7 +216,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
       function compareTables(callback) {
         self.connection.query(util.format(queries.COMPARE_TABLES, self.dbTemp, self.dbTemp, self.dbOriginal),
           function(err, results) {
-            if (err) callback(err);
+            if (err) return callback(err);
 
             results.forEach(function(t) {
               if (t.action === 'DROP') {
@@ -227,10 +227,10 @@ MysqlTransit.prototype.transit = function(opt, next) {
             });
 
             async.series(self.verifyTables(), function(err, results) {
-              if (err) callback(err);
+              if (err) return callback(err);
 
               async.series(self.createTables(), function(err, results) {
-                if (err) callback(err);
+                if (err) return callback(err);
 
                 callback();
               });
@@ -253,7 +253,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
           return function(callback) {
             self.connection.query(util.format(queries.COMPARE_COLUMNS, self.dbTemp, self.dbTemp, self.dbOriginal, table, self.dbTemp, self.dbOriginal),
               function(err, results) {
-                if (err) callback(err);
+                if (err) return callback(err);
 
                 var singleTableQueries = [];
                 var removedFields = [];
@@ -329,7 +329,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                 });
 
                 async.series(verify, function(err, result) {
-                  if (err) callback(err);
+                  if (err) return callback(err);
 
                   addedFields.forEach(function(newField) {
                     singleTableQueries.push(util.format(queries.ADD_COLUMN, table, newField.name, newField.type));
@@ -350,7 +350,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                         }], function(answer) {
                           if (answer.exec) {
                             self.executeQuery(query, function(err) {
-                              if (err) cb(err);
+                              if (err) return cb(err);
 
                               cb();
                             });
@@ -361,7 +361,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
                         });
                       } else {
                         self.executeQuery(query, function(err) {
-                          if (err) cb(err);
+                          if (err) return cb(err);
 
                           cb();
                         });
@@ -377,15 +377,15 @@ MysqlTransit.prototype.transit = function(opt, next) {
       },
       function run(callback) {
         async.series(self.compareQueries, function(err, results) {
-          if (err) callback(err);
+          if (err) return callback(err);
 
           // here we switch to the original db
           self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function() {
-            if (err) callback(err);
+            if (err) return callback(err);
 
             // here we execute migration queries one by one
             async.series(self.queryQueue, function(err, result) {
-              if (err) callback(err);
+              if (err) return callback(err);
 
               if (this.interactive === true) {
                 console.log('Done.');
