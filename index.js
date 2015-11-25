@@ -26,6 +26,7 @@ function MysqlTransit(dbOriginal, dbTemp, connectionParameters) {
   this.queryQueue = [];
   this.tablesToDrop = [];
   this.tablesToCreate = [];
+  this.interactive = true;
   return this._init();
 }
 
@@ -53,10 +54,11 @@ MysqlTransit.prototype._init = function(next) {
 }
 
 MysqlTransit.prototype.executeQuery = function(q, cb) {
+  var self = this;
   this.connection.query(q, function(err, res) {
     if (err) return cb(err);
 
-    if (this.interactive === true) {
+    if (self.interactive === true) {
       console.log('--------------------------------------------------------------------------------');
       console.log(q);
       console.log('Query executed successfully');
@@ -77,7 +79,7 @@ MysqlTransit.prototype.verifyTables = function() {
         };
       });
 
-      if (this.interactive === true) {
+      if (self.interactive === true) {
         possibleAnswers.unshift(
           {
             name: 'Removed',
@@ -104,7 +106,7 @@ MysqlTransit.prototype.verifyTables = function() {
               self.executeQuery(util.format(queries.DROP_TABLE, t), function(err) {
                 if (err) return cb(err);
 
-                if (this.interactive === true) {
+                if (self.interactive === true) {
                   console.log('Table ' + t + ' removed successfully.');
                 }
                 cb();
@@ -142,7 +144,7 @@ MysqlTransit.prototype.createTables = function() {
   var self = this;
   var createTables = this.tablesToCreate.map(function(tbl) {
     return function(cb) {
-      if (this.interactive === true) {
+      if (self.interactive === true) {
         inq.prompt([
           {
             name: 'create',
@@ -155,13 +157,13 @@ MysqlTransit.prototype.createTables = function() {
             self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
               if (err) return cb(err);
 
-              if (this.interactive === true) {
+              if (self.interactive === true) {
                 console.log('Table ' + tbl + ' created successfully.');
               }
               cb();
             });
           } else {
-            if (this.interactive === true) {
+            if (self.interactive === true) {
               console.log('Skipped');
             }
             cb();
@@ -171,7 +173,7 @@ MysqlTransit.prototype.createTables = function() {
         self.executeQuery(util.format(queries.CREATE_TABLE, self.dbOriginal, tbl, self.dbTemp, tbl), function(err) {
           if (err) return cb(err);
 
-          if (this.interactive === true) {
+          if (self.interactive === true) {
             console.log('Table ' + tbl + ' created successfully.');
           }
           cb();
@@ -194,8 +196,6 @@ MysqlTransit.prototype.createTables = function() {
  */
 MysqlTransit.prototype.transit = function(opt, next) {
   var self = this;
-  this.interactive = true;
-  this.interactive = false;
 
   if (opt.hasOwnProperty('interactive') && opt.interactive === false) {
     this.interactive = false;
@@ -274,7 +274,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
 
                 var verify = removedFields.map(function(rmField) {
                   return function(cb) {
-                    if (this.interactive === true) {
+                    if (self.interactive === true) {
                       var possibleAnswers = addedFields.map(function(f, i) {
                         return {
                           name: 'Changed to ' + f.name + ' ' + f.type,
@@ -341,7 +341,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
 
                   singleTableQueries.forEach(function(query) {
                     self.queryQueue.push(function(cb) {
-                      if (this.interactive === true) {
+                      if (self.interactive === true) {
                         inq.prompt([{
                           name: 'exec',
                           message: 'Query: ' + query + ' Execute?',
@@ -387,7 +387,7 @@ MysqlTransit.prototype.transit = function(opt, next) {
             async.series(self.queryQueue, function(err, result) {
               if (err) callback(err);
 
-              if (this.interactive === true) {
+              if (self.interactive === true) {
                 console.log('Done.');
               }
               return callback();
