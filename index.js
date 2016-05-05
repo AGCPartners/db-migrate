@@ -390,7 +390,15 @@ MysqlTransit.prototype.transit = function(opt, next) {
               if (self.interactive === true) {
                 console.log('Done.');
               }
-              return callback();
+              // remove temporary database
+              self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function() {
+                self.connection.query(util.format(queries.DROP_DATABASE, self.dbTemp),function(){
+                  if (self.interactive === true) {
+                    console.log('Temporary database ' + self.dbTemp + ' was removed.');
+                  }
+                  return callback();
+                });
+              });
             });
           });
         });
