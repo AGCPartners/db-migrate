@@ -520,8 +520,8 @@ MysqlTransit.prototype.transit = function(opt, next) {
             if (err) return callback(err);
 
             // here we switch to the original db
-            self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function() {
-              
+            self.connection.query(util.format(queries.SWITCH_DB, self.dbOriginal), function(err) {
+              if (err) return callback(err);
 
               // here we execute migration queries one by one
               async.series(self.queryQueue, function(err, result) {
